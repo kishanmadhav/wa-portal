@@ -47,28 +47,27 @@ natural language, with follow-up context carried across turns.
 ## Repo layout
 
 ```
-wa-portal/                  the portal + bot (Node/Express)
-  src/
-    server.js               app entry, route mounting, body parsers
-    routes/
-      webhook-cloud.js      Meta Cloud API webhook (verify + signature + normalise)
-      webhook.js            shared inbound processor + legacy OpenWA webhook
-      whatsapp.js           connect / status / link a number to a tenant
-      jira.js               Atlassian OAuth + project selection
-      operators.js          verified-operator management
-      reminders.js          due-reminder delivery (called by a cron/timer)
-      auth.js               signup / login / sessions
-    lib/
-      wa.js                 provider router — cloud vs openwa
-      whatsapp-cloud.js     Meta Graph API client (send text/template, subscribe)
-      openwa.js             legacy OpenWA gateway client
-      jira.js               Jira REST client (search, create, transition, comment…)
-      db.js, migrate.js     Postgres access + schema migration
-  db/schema.sql             tables (users, sessions, conversations, tickets,
-                            operators, reminders)
-  public/                   dashboard, login, signup (static)
-  deploy/                   Caddyfile, docker-compose, bootstrap + backup scripts
+src/
+  server.js                 app entry, route mounting, body parsers
+  routes/
+    webhook-cloud.js        Meta Cloud API webhook (verify + signature + normalise)
+    webhook.js              shared inbound processor + legacy OpenWA webhook
+    whatsapp.js             connect / status / link a number to a tenant
+    jira.js                 Atlassian OAuth + project selection
+    operators.js            verified-operator management
+    reminders.js            due-reminder delivery (called by a cron/timer)
+    auth.js                 signup / login / sessions
+  lib/
+    wa.js                   provider router — cloud vs openwa
+    whatsapp-cloud.js       Meta Graph API client (send text/template, subscribe)
+    openwa.js               legacy OpenWA gateway client
+    jira.js                 Jira REST client (search, create, transition, comment…)
+    db.js, migrate.js       Postgres access + schema migration
 
+db/schema.sql               tables (users, sessions, conversations, tickets,
+                            operators, reminders)
+public/                     dashboard, login, signup (static)
+deploy/                     Caddyfile, docker-compose, bootstrap + backup scripts
 docs/
   cloud-api-migration-plan.md   Embedded Signup / Tech Provider plan for
                                 multi-tenant onboarding (partly implemented —
@@ -114,7 +113,6 @@ written once. Swapping providers is a single env var.
 ### 2. Configure
 
 ```bash
-cd wa-portal
 cp .env.example .env      # then fill in the values
 npm install
 npm run migrate           # creates/updates the schema
