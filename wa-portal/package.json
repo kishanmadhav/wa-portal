@@ -1,0 +1,21 @@
+{
+  "name": "wa-portal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant WhatsApp -> Jira portal. Users sign up, scan WhatsApp via OpenWA, connect Jira, and their inbound messages become Jira tickets.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "migrate": "node src/lib/migrate.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "express-session": "^1.18.1",
+    "openai": "^4.67.3",
+    "pg": "^8.13.1"
+  }
+}

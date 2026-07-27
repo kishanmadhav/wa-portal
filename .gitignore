@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SECRETS — never commit. These hold live tokens, keys, and passwords.
+# ─────────────────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env
+!*.env.example
+portal.env
+compose.env
+worker.env
+connection.txt
+
+# Private keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+*.ppk
+
+# AWS / cloud credential files
+.aws/
+credentials
+.ec2-meta
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Database dumps & backups (may contain customer data)
+# ─────────────────────────────────────────────────────────────────────────────
+*.sql.gz
+*.dump
+waportal-safety-*.sql
+db-backups/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dependencies & build output
+# ─────────────────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Third-party cloned repos (e.g. upstream OpenWA) — clone separately, don't vendor
+openwa-gateway/repo/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Runtime / session artifacts
+# ─────────────────────────────────────────────────────────────────────────────
+openwa-data/
+*.sqlite
+*.sqlite3
+.session-id
+qr.png
+caddy_data/
+caddy_config/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Logs & temp
+# ─────────────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-error.log*
+.cache/
+tmp/
+*.tgz
+*.zip
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Editor / OS
+# ─────────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

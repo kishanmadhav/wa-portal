@@ -1,0 +1,88 @@
+# Production stack for the Lightsail box: Caddy (auto-HTTPS) in front of the
+# portal, plus OpenWA + Postgres. All on one Docker network; only Caddy is
+# exposed to the internet (80/443). DB + OpenWA + portal stay internal.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - portal
+
+  openwa:
+    build:
+      context: ./openwa
+      dockerfile: Dockerfile
+    container_name: openwa-api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=2785
+      - DATABASE_TYPE=sqlite
+      - DATABASE_NAME=/app/data/openwa.sqlite
+      - DATABASE_SYNCHRONIZE=true
+      - ENGINE_TYPE=whatsapp-web.js
+      - SESSION_DATA_PATH=/app/data/sessions
+      - PUPPETEER_HEADLESS=true
+      - PUPPETEER_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu,--single-process
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_PATH=/app/data/media
+      - WEBHOOK_TIMEOUT=10000
+      - WEBHOOK_MAX_RETRIES=3
+      - QUEUE_ENABLED=false
+      # API key comes from the env file so it isn't a default.
+      - API_KEY=${OPENWA_API_KEY}
+    volumes:
+      - ./openwa-data:/app/data
+    # Cap memory so a Chrome leak can't take down the whole box; swap absorbs spikes.
+    mem_limit: 900m
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: wa-portal-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+    container_name: wa-portal
+    restart: unless-stopped
+    env_file:
+      - ./portal.env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - OPENWA_URL=http://openwa-api:2785
+      # OpenWA posts back to the portal over the internal network. Single-label
+      # hostnames are rejected by OpenWA's validator, so use the public domain.
+      - PORTAL_WEBHOOK_BASE=https://${PORTAL_DOMAIN}/whatsapp/webhook
+      - JIRA_REDIRECT_URI=https://${PORTAL_DOMAIN}/jira/callback
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

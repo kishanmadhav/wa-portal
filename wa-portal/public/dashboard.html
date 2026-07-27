@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard — WhatsApp Support Portal</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="dash">
+  <header class="topbar">
+    <div class="brand">waportal</div>
+    <div class="right">
+      <span id="who"></span>
+      <button id="logout" class="ghost">Log out</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <!-- WhatsApp -->
+    <section class="card">
+      <h2>1. WhatsApp</h2>
+      <p id="wa-status" class="status">Checking…</p>
+      <div id="wa-qr-wrap" class="qr-wrap hidden">
+        <p class="hint">Open WhatsApp → Linked Devices → Link a Device, then scan:</p>
+        <img id="wa-qr" alt="WhatsApp QR" />
+      </div>
+      <div class="actions">
+        <button id="wa-connect">Connect WhatsApp</button>
+        <button id="wa-disconnect" class="ghost hidden">Disconnect</button>
+        <button id="wa-reset" class="ghost hidden">Connect a different number</button>
+      </div>
+    </section>
+
+    <!-- Jira -->
+    <section class="card">
+      <h2>2. Jira</h2>
+      <p id="jira-status" class="status">Checking…</p>
+      <div class="actions">
+        <a id="jira-connect" class="btn" href="/jira/connect">Connect Jira</a>
+      </div>
+      <div id="project-wrap" class="hidden">
+        <label>Project for new tickets
+          <select id="project-select"></select>
+        </label>
+        <button id="save-project">Save project</button>
+        <p id="project-msg" class="msg"></p>
+      </div>
+    </section>
+
+    <!-- Verified operators -->
+    <section class="card wide">
+      <h2>Verified operators</h2>
+      <p class="hint">These phone numbers can query your Jira over WhatsApp (ticket status, priority, counts, recent activity) instead of creating tickets.</p>
+      <div class="op-add">
+        <input id="op-phone" type="text" placeholder="Phone with country code, e.g. +91 7358350698" />
+        <input id="op-label" type="text" placeholder="Name (optional)" />
+        <button id="op-add-btn">Add operator</button>
+      </div>
+      <p id="op-msg" class="msg"></p>
+      <table id="operators">
+        <thead><tr><th>Phone</th><th>Name</th><th>Added</th><th></th></tr></thead>
+        <tbody><tr><td colspan="4" class="muted">No operators yet.</td></tr></tbody>
+      </table>
+    </section>
+
+    <!-- Recent tickets -->
+    <section class="card wide">
+      <h2>Recent tickets created from WhatsApp</h2>
+      <table id="tickets">
+        <thead><tr><th>Key</th><th>From</th><th>Issue</th><th>When</th></tr></thead>
+        <tbody><tr><td colspan="4" class="muted">No tickets yet.</td></tr></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>

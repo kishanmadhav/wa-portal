@@ -1,0 +1,139 @@
+/* Parsewave-style: light theme, DM Sans, white cards, pastel pills. */
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&display=swap");
+
+:root {
+  --bg: #ffffff;
+  --bg-soft: #fafafa;
+  --card: #ffffff;
+  --border: #ececec;
+  --border-strong: #e0e0e0;
+  --text: #111111;
+  --text-soft: #6b7280;
+  --text-faint: #9ca3af;
+  --accent: #111111;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --radius: 16px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+a { color: var(--text); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.mono { font-family: "DM Mono", ui-monospace, monospace; }
+
+/* ── Buttons ── */
+button, .btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; border: none;
+  background: #111111; color: #fff;
+  font-family: inherit; font-size: 14px; font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 11px 18px; border-radius: 10px;
+  transition: background 140ms ease, transform 80ms ease;
+}
+button:hover, .btn:hover { background: #2a2a2a; text-decoration: none; }
+button:active, .btn:active { transform: translateY(1px); }
+button.ghost, .ghost {
+  background: #fff; border: 1px solid var(--border-strong); color: #111;
+}
+button.ghost:hover { background: var(--bg-soft); }
+
+/* ── Auth cards ── */
+.auth-card {
+  max-width: 400px;
+  margin: 9vh auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 36px;
+  box-shadow: var(--shadow);
+}
+.auth-card h1 { margin: 0 0 6px; font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
+.auth-card .sub { margin: 0 0 24px; color: var(--text-soft); font-size: 14.5px; }
+.auth-card label { display: block; font-size: 13px; color: var(--text-soft); margin-bottom: 16px; font-weight: 500; }
+.auth-card input, select {
+  width: 100%; margin-top: 7px; padding: 11px 13px;
+  background: #fff; border: 1px solid var(--border-strong); border-radius: 10px;
+  color: var(--text); font-family: inherit; font-size: 14.5px;
+  transition: border-color 120ms ease;
+}
+.auth-card input:focus, select:focus { outline: none; border-color: #111; }
+.auth-card button { width: 100%; margin-top: 4px; }
+.alt { margin-top: 18px; font-size: 13.5px; color: var(--text-soft); }
+.alt a { font-weight: 600; }
+.msg { font-size: 13px; margin: 8px 0 0; min-height: 16px; }
+.msg.err { color: #dc2626; }
+.msg.ok { color: #16a34a; }
+
+/* ── Dashboard ── */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 32px; border-bottom: 1px solid var(--border); background: #fff;
+}
+.brand {
+  font-weight: 700; font-size: 18px; letter-spacing: -0.02em;
+}
+.brand::before, .brand::after { content: "/"; color: var(--text-faint); font-weight: 400; }
+.topbar .right { display: flex; align-items: center; gap: 16px; font-size: 14px; color: var(--text-soft); }
+
+.grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
+  max-width: 1040px; margin: 36px auto; padding: 0 32px;
+}
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 26px;
+  box-shadow: var(--shadow);
+}
+.card.wide { grid-column: 1 / -1; }
+.card h2 { margin: 0 0 16px; font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+.status { font-size: 14px; margin: 0 0 16px; color: var(--text-soft); }
+.status.ok { color: #16a34a; }
+.status b { color: var(--text); font-weight: 600; }
+.actions { display: flex; gap: 10px; margin-top: 12px; }
+
+.qr-wrap { margin: 16px 0; text-align: center; }
+.qr-wrap img {
+  width: 230px; height: 230px; background: #fff;
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+}
+.hint { font-size: 13px; color: var(--text-soft); margin-bottom: 12px; }
+.hidden { display: none; }
+
+#project-wrap { margin-top: 18px; }
+#project-wrap label { display: block; font-size: 13px; color: var(--text-soft); margin-bottom: 12px; font-weight: 500; }
+#save-project { margin-top: 4px; }
+
+/* ── Tickets table ── */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 12px 12px; border-bottom: 1px solid var(--border); }
+th { color: var(--text-faint); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+td .mono, td.mono { font-family: "DM Mono", monospace; font-size: 12.5px; color: var(--text-soft); }
+.muted { color: var(--text-faint); }
+
+/* ── Status pills (Parsewave pastel style) ── */
+.pill {
+  display: inline-block; padding: 4px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; letter-spacing: -0.01em;
+}
+.pill.amber  { background: #fef3e2; color: #c2710c; }   /* pending / waiting */
+.pill.orange { background: #fdebe5; color: #d9480f; }   /* needs attention / disconnected */
+.pill.grey   { background: #f1f1f1; color: #555; }      /* neutral / done */
+.pill.green  { background: #e7f6ec; color: #1a7f37; }   /* connected / success */
+.pill.blue   { background: #e8f1fd; color: #1d4ed8; }   /* info */
+
+@media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+
+/* Verified operators add-row */
+.op-add { display: flex; gap: 10px; margin: 14px 0 6px; flex-wrap: wrap; }
+.op-add input { flex: 1; min-width: 180px; padding: 10px 12px; background: #fff; border: 1px solid var(--border-strong); border-radius: 10px; font-family: inherit; font-size: 14px; }
+.op-add input:focus { outline: none; border-color: #111; }
+.op-add button { white-space: nowrap; }

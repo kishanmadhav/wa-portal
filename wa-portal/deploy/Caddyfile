@@ -1,0 +1,6 @@
+# Auto-HTTPS reverse proxy. Caddy fetches + renews a Let's Encrypt cert for the
+# domain automatically and proxies all traffic to the portal container.
+wa.agenticgenie.click {
+	encode gzip
+	reverse_proxy portal:4200
+}

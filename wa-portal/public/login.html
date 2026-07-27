@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Log in — WhatsApp Support Portal</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="auth-card">
+    <h1>Log in</h1>
+    <p class="sub">WhatsApp → Jira support portal.</p>
+    <form id="form">
+      <label>Email<input name="email" type="email" required placeholder="you@company.com" /></label>
+      <label>Password<input name="password" type="password" required placeholder="Your password" /></label>
+      <button type="submit">Log in</button>
+    </form>
+    <p id="msg" class="msg"></p>
+    <p class="alt">No account? <a href="/signup.html">Sign up</a></p>
+  </div>
+  <script>
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("msg");
+      msg.textContent = "";
+      const fd = new FormData(e.target);
+      const res = await fetch("/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(fd.entries())),
+      });
+      const data = await res.json();
+      if (res.ok) { location.href = "/dashboard.html"; }
+      else { msg.textContent = data.error === "invalid_credentials" ? "Wrong email or password" : (data.error || "Login failed"); msg.className = "msg err"; }
+    });
+  </script>
+</body>
+</html>
