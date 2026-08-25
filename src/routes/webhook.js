@@ -271,8 +271,29 @@ async function buildFilter(userId, q) {
   }
   return { filter: andClauses(...parts), descParts: desc }
 }
+// Reply formatting. WhatsApp supports *bold*, _italic_, and monospace only —
+// no tables, no headings — so structure comes from consistent line shape:
+// one ticket = key + title line, then an indented status line.
+const PRIO_ICON = { highest: "🔴", high: "🟠", medium: "🟡", low: "🟢", lowest: "⚪" }
+function prioIcon(p) { return PRIO_ICON[String(p || "").toLowerCase()] || "▫️" }
+
 function fmtTicket(t) {
-  return `*${t.key}* — ${t.summary}\nStatus: ${t.status} · Priority: ${t.priority} · Assignee: ${t.assignee}`
+  return (
+    `*${t.key}*  ${prioIcon(t.priority)} ${t.priority || "—"}\n` +
+    `${t.summary}\n\n` +
+    `Status:    ${t.status || "—"}\n` +
+    `Assignee:  ${t.assignee || "Unassigned"}`
+  )
+}
+
+function fmtTicketList(items, desc) {
+  const head = `📋 *Tickets*${desc ? ` — ${desc}` : ""}  _(${items.length})_`
+  const rows = items.map((t, i) =>
+    `${i + 1}. *${t.key}* ${prioIcon(t.priority)}\n` +
+    `    ${String(t.summary || "").slice(0, 60)}\n` +
+    `    _${t.status} · ${t.assignee || "Unassigned"}_`,
+  )
+  return head + "\n\n" + rows.join("\n\n") + "\n\n_Reply with a key for details, or \"assign HGD-12 to <name>\"._"
 }
 
 // Current time formatted in IST, for the LLM to resolve relative times.
@@ -601,15 +622,28 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
       })
       // Apply optional priority/assignee in one update.
       let extra = ""
+      let assigneeName = null
+      let priorityName = null
       if (a.priority || a.assignee) {
         const applied = await jira.updateTicket(userId, ticket.key, {
           assigneeQuery: a.assignee || null,
           priorityWord: a.priority || null,
         })
-        const bits = []
-        if (applied.assignee) bits.push(`assigned to ${applied.assignee}`)
-        if (applied.priority) bits.push(`priority ${applied.priority}`)
-        if (bits.length) extra = " (" + bits.join(", ") + ")"
+        assigneeName = applied.assignee || null
+        priorityName = applied.priority || null
+        // "create ... and assign to X" must notify X, exactly like a standalone
+        // assign does. Before this only the separate `assign` action notified.
+        if (applied.assigneeUser) {
+          notifyAssignment({
+            userId, assigneeUser: applied.assigneeUser,
+            ticket: { key: ticket.key, summary, priority: priorityName, status: "To Do" },
+            assignedBy: ctx.operatorLabel || (ctx.operatorPhone ? `+${ctx.operatorPhone}` : null),
+            send: (phone, text) => wa.sendText(ctx.session, phone, text),
+          }).catch(() => {})
+        }
+        // Tell the operator if the named assignee could not be found, rather
+        // than silently creating an unassigned ticket.
+        if (a.assignee && !applied.assignee) extra = `\n⚠️ Couldn't find a Jira user matching "${a.assignee}" — left unassigned.`
       }
       // Pull it into Service Genie (classify + triage) like WhatsApp-created tickets.
       triggerServiceGenieSync(ticket.key)
@@ -621,8 +655,12 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
       }
       return { reply: [
         "✅ *Ticket created*", "",
-        `🎫 *${ticket.key}* — ${summary.slice(0, 80)}${extra}`,
-      ].join("\n") + deadlineNote, keys: [ticket.key] }
+        `*${ticket.key}*  ${prioIcon(priorityName)} ${priorityName || "Medium"}`,
+        summary.slice(0, 120), "",
+        `Space:     ${ctx.space || "—"}`,
+        `Status:    To Do`,
+        `Assignee:  ${assigneeName || "Unassigned"}`,
+      ].join("\n") + extra + deadlineNote, keys: [ticket.key] }
     } catch (e) {
       console.error("[webhook] operator create failed:", e.message)
       return { reply: "Sorry, I couldn't create that ticket right now. Please try again shortly." }
@@ -652,8 +690,7 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
     ctx.lastFilter = { status: a.status, priority: a.priority, assignee: a.assignee }
     if (items.length === 0) return { reply: "No tickets match that.", keys: [] }
     const desc = descParts.join(", ")
-    const reply = `Tickets${desc ? " (" + desc + ")" : ""} — showing ${items.length}:\n\n` +
-      items.map((t) => `• *${t.key}* — ${t.summary.slice(0, 45)}\n   _${t.priority} · ${t.status} · ${t.assignee}_`).join("\n")
+    const reply = fmtTicketList(items, desc)
     return { reply, keys: items.map((t) => t.key) }
   }
 
@@ -887,16 +924,28 @@ async function processInbound(evt) {
         ? evt.interactiveId.slice(spaceListId.length) : null
 
       if (wantsSwitch || tappedSpace || !ctx.space) {
-        const allowed = await resolveSpaceKeys(userId, operator.phone, jira).catch(() => [])
-        // No grants at all -> single-space install; fall back to pinned project.
-        const spaces = allowed.length ? allowed : (conn && conn.project_key ? [conn.project_key] : [])
+        // Which spaces can this sender see?
+        //   super_admin -> EVERY project on the Jira site. They must be able to
+        //     open HASH or KAN even if no explicit grant names them.
+        //   admin       -> every project on the site, narrowed to their grants.
+        //   operator    -> only the projects they were granted.
+        //   no grants   -> the connection's pinned project (legacy install).
+        let spaces = []
+        if (operator.role === "admin" || operator.role === "super_admin") {
+          spaces = await jira.listProjects(userId).then((ps) => ps.map((x) => x.key)).catch(() => [])
+          if (operator.role === "admin" && operator.spaces.length) {
+            spaces = spaces.filter((k) => operator.spaces.includes(k))
+          }
+        }
+        if (!spaces.length) spaces = await resolveSpaceKeys(userId, operator.phone, jira).catch(() => [])
+        if (!spaces.length && conn && conn.project_key) spaces = [conn.project_key]
 
         if (spaces.length === 0) {
           await sendText("No Jira space is set up for you yet. Ask the portal owner to add you to a project.")
           return
         }
 
-        // A tap or a typed key that matches an allowed space selects it.
+        // A tap, or a typed key matching an allowed space, selects it.
         const typedKey = trimmed.toUpperCase()
         const pick = tappedSpace && spaces.includes(tappedSpace.toUpperCase())
           ? tappedSpace.toUpperCase()
@@ -905,19 +954,24 @@ async function processInbound(evt) {
         if (pick) {
           ctx.space = pick
           ctx.lastKeys = []; ctx.lastFilter = null  // context from another space is stale
-          await sendText(`Space set to *${pick}*. You can now create, view, or assign tickets here.\n\nSay "switch space" any time to change.`)
+          await sendText(
+            `✅ *Space: ${pick}*\n\n` +
+            `You're now working in ${pick}. Try:\n` +
+            `• _how many open?_\n` +
+            `• _create a ticket for <issue>_\n` +
+            `• _assign ${pick}-12 to <name>_\n\n` +
+            `Say *switch space* to change.`,
+          )
           return
         }
 
-        if (wantsSwitch || !ctx.space) {
-          if (spaces.length === 1) {
-            ctx.space = spaces[0]
-            // Fall through: interpret this message in the auto-selected space.
-          } else {
-            await sendSpacePicker(session, chatId, spaces, sendText)
-            return
-          }
-        }
+        // No space selected yet, or they asked to switch: ALWAYS show the
+        // picker. Even with a single space the explicit choice is the point —
+        // the operator should know which project they are acting in. The old
+        // behaviour auto-selected a lone space silently, which is why the
+        // picker never appeared for anyone granted only HGD.
+        await sendSpacePicker(session, chatId, spaces, sendText)
+        return
       }
 
       try {
