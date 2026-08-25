@@ -313,6 +313,37 @@ async function updateTicket(userId, issueKey, { assigneeQuery, priorityWord }) {
   return applied
 }
 
+
+// Fetch EVERY matching issue (paged), for aggregate questions like "who are
+// tickets assigned to?". searchIssues caps at maxResults, which would make a
+// breakdown silently wrong on any project with more than ~20 open tickets.
+// Hard-capped at `limit` so a huge project can't run away; callers report
+// truncation to the user rather than presenting a partial count as complete.
+async function searchAllIssues(userId, jqlExtra, spaceKeys = null, limit = 500) {
+  const { token, conn } = await validToken(userId)
+  const scope = projectScope(conn, spaceKeys)
+  const jql = `${scope}${jqlExtra ? ` AND ${jqlExtra}` : ""} ORDER BY updated DESC`
+  const out = []
+  let nextPageToken = null
+  for (let page = 0; page < 20 && out.length < limit; page++) {
+    const params = new URLSearchParams({
+      jql, maxResults: "100", fields: "summary,status,priority,assignee",
+      ...(nextPageToken ? { nextPageToken } : {}),
+    })
+    const res = await fetch(`${API_BASE}/ex/jira/${conn.cloud_id}/rest/api/3/search/jql?${params}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } })
+    if (!res.ok) throw new Error(`jira_search_failed ${res.status}`)
+    const data = await res.json()
+    for (const i of data.issues || []) out.push({
+      key: i.key, summary: i.fields?.summary || "", status: i.fields?.status?.name || "",
+      priority: i.fields?.priority?.name || "", assignee: i.fields?.assignee?.displayName || "Unassigned",
+    })
+    if (data.isLast || !data.nextPageToken) break
+    nextPageToken = data.nextPageToken
+  }
+  return { issues: out.slice(0, limit), truncated: out.length >= limit }
+}
+
 // ── Operator query helpers ───────────────────────────────────────────────────
 // Read-only Jira lookups used by the verified-operator WhatsApp flow.
 
@@ -609,6 +640,7 @@ module.exports = {
   resolvePriority,
   updateTicket,
   searchIssues,
+  searchAllIssues,
   getTicket,
   registerJiraWebhook,
   isResolvedStatus,
