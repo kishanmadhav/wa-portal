@@ -16,7 +16,7 @@ const router = express.Router()
 router.get("/", requireAuth, async (req, res) => {
   try {
     const rows = await all(
-      `select id, phone, label, role, space_key, created_at
+      `select id, phone, label, email, role, space_key, created_at
          from wa_space_roles
         where user_id = $1
         order by
@@ -52,7 +52,7 @@ router.get("/spaces", requireAuth, async (req, res) => {
 
 // POST /roles — grant a role.  { phone, label?, role, space_key? }
 router.post("/", requireAuth, async (req, res) => {
-  const { phone, label, role } = req.body || {}
+  const { phone, label, email, role } = req.body || {}
   const spaceKey = req.body.space_key || req.body.spaceKey || null
 
   if (!ROLES.includes(role)) {
@@ -67,6 +67,7 @@ router.post("/", requireAuth, async (req, res) => {
       userId: req.userId,
       phone,
       label,
+      email,
       role,
       spaceKey,
       grantedBy: req.userId,

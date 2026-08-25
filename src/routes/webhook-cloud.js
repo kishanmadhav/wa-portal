@@ -98,13 +98,23 @@ router.post("/webhook", async (req, res) => {
         }
 
         for (const msg of value.messages || []) {
-          // Only text for now (mirror the legacy TEXT_TYPES filter).
-          if (msg.type !== "text") {
-            console.log(`[cloud-webhook] ignoring non-text type=${msg.type}`)
+          // Text, plus taps on interactive lists/buttons (used for the space
+          // picker). A tap arrives as msg.interactive.{list_reply|button_reply}
+          // with the row `id` we sent; surface it both as `body` (so the shared
+          // processor can treat it like typed input) and as `interactiveId`.
+          let text = ""
+          let interactiveId = null
+          if (msg.type === "text") {
+            text = (msg.text && msg.text.body ? msg.text.body : "").trim()
+          } else if (msg.type === "interactive" && msg.interactive) {
+            const r = msg.interactive.list_reply || msg.interactive.button_reply
+            if (r && r.id) { interactiveId = String(r.id); text = interactiveId }
+          }
+          if (!text) {
+            console.log(`[cloud-webhook] ignoring type=${msg.type}`)
             continue
           }
           const fromPhone = msg.from // E.164 digits, no + — exactly what we want
-          const text = (msg.text && msg.text.body ? msg.text.body : "").trim()
           if (!phoneNumberId || !fromPhone || !text) continue
 
           // Which tenant owns this number? Look up their send credentials.
@@ -130,6 +140,7 @@ router.post("/webhook", async (req, res) => {
             fromPhone,               // already a bare phone number
             chatId: fromPhone,       // Cloud has no @c.us/@lid; chatId === phone
             body: text,
+            interactiveId,
             messageId: msg.id,
             pushName: (contacts[0] && contacts[0].profile && contacts[0].profile.name) || null,
           }

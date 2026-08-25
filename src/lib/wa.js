@@ -55,4 +55,16 @@ async function sendTemplate(session, recipient, templateName, opts) {
   return null
 }
 
-module.exports = { PROVIDER, isCloud, sendText, sendTemplate }
+// Send a tap-to-choose list (Cloud only). OpenWA has no interactive messages;
+// callers guard on the return value / existence and fall back to text.
+async function sendList(session, recipient, opts) {
+  const s = normSession(session)
+  if (!isCloud()) return null
+  return cloud.sendList(
+    { phoneNumberId: s.phoneNumberId, accessToken: s.accessToken },
+    recipient,
+    opts,
+  )
+}
+
+module.exports = { PROVIDER, isCloud, sendText, sendTemplate, sendList }

@@ -147,6 +147,7 @@ Return ONLY JSON: { "intent": "...", "assignee": "<text or null>", "priority": "
 
 const { normPhone } = require("./operators")
 const { resolveSpaceKeys } = require("../lib/roles")
+const { notifyAssignment } = require("../lib/notify")
 
 // Returns the operator record enriched with their space-scoped roles, so
 // downstream handlers know not just THAT the sender is trusted but WHERE.
@@ -158,6 +159,32 @@ const { resolveSpaceKeys } = require("../lib/roles")
 // wa_operators remains the "is this phone trusted at all" gate. A phone with
 // no row there is an unknown sender regardless of wa_space_roles, so revoking
 // from the operator list still locks someone out.
+
+// Send the tap-to-choose space list. Falls back to a numbered text menu on
+// providers without interactive messages (legacy OpenWA), where the operator
+// then types the project key.
+async function sendSpacePicker(session, chatId, spaces, sendText) {
+  const rows = spaces.slice(0, 10).map((k) => ({ id: `space:${k}`, title: k, description: `Work in ${k}` }))
+  if (wa.sendList) {
+    try {
+      await wa.sendList(session, chatId, {
+        header: "Choose a space",
+        body: "Which Jira project do you want to work in?",
+        button: "Choose space",
+        rows,
+        footer: spaces.length > 10 ? `Showing 10 of ${spaces.length}` : undefined,
+      })
+      return
+    } catch (e) {
+      console.warn("[webhook] interactive list failed, falling back to text:", e.message)
+    }
+  }
+  await sendText(
+    "Which Jira space do you want to work in? Reply with the key:\n\n" +
+    spaces.map((k) => `• *${k}*`).join("\n"),
+  )
+}
+
 async function getOperator(userId, fromPhone) {
   const digits = normPhone(fromPhone)
   if (!digits) return null
@@ -665,6 +692,15 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
     for (const k of targetKeys) {
       const applied = await jira.updateTicket(userId, k, { assigneeQuery: a.assignee })
       out.push(applied.assignee ? `${k} → ${applied.assignee}` : `${k} (user not found)`)
+      // Tell the assignee. Never lets a notify failure fail the assignment.
+      if (applied.assigneeUser) {
+        const t = await jira.getTicket(userId, k).catch(() => ({ key: k }))
+        notifyAssignment({
+          userId, assigneeUser: applied.assigneeUser, ticket: t || { key: k },
+          assignedBy: ctx.operatorLabel || (ctx.operatorPhone ? `+${ctx.operatorPhone}` : null),
+          send: (phone, text) => wa.sendText(ctx.session, phone, text),
+        }).catch(() => {})
+      }
     }
     return { reply: "Assignment:\n" + out.map((r) => `• ${r}`).join("\n"), keys: targetKeys }
   }
@@ -803,6 +839,7 @@ async function processInbound(evt) {
       ctx.openwaSessionId = session && session.openwaSessionId  // legacy compat
       ctx.chatId = chatId
       ctx.operatorPhone = fromPhone
+      ctx.operatorLabel = operator.label || null
 
       // ── Pending-delete confirmation ────────────────────────────────────────
       // Deleting is irreversible, so the delete action stashes the keys here
@@ -832,6 +869,57 @@ async function processInbound(evt) {
         // as a normal command below.
       }
 
+      // ── Space selection ────────────────────────────────────────────────────
+      // Every operator action is scoped to ONE Jira project ("space"). The
+      // chosen space lives on the per-operator context. Until one is chosen we
+      // do not interpret the message as a command at all — we ask first.
+      //
+      //   "switch space" / "change space" / "spaces"  -> re-open the picker
+      //   a tapped list row (interactiveId "space:HGD") -> select HGD
+      //   a bare project key typed ("HGD")              -> select HGD
+      //
+      // One allowed space is auto-selected silently: a picker with a single
+      // row is just friction.
+      const spaceListId = "space:"
+      const trimmed = body.trim()
+      const wantsSwitch = /^(switch|change|choose|select|pick)\s+(space|project)s?\.?$|^spaces?\.?$/i.test(trimmed)
+      const tappedSpace = evt.interactiveId && evt.interactiveId.startsWith(spaceListId)
+        ? evt.interactiveId.slice(spaceListId.length) : null
+
+      if (wantsSwitch || tappedSpace || !ctx.space) {
+        const allowed = await resolveSpaceKeys(userId, operator.phone, jira).catch(() => [])
+        // No grants at all -> single-space install; fall back to pinned project.
+        const spaces = allowed.length ? allowed : (conn && conn.project_key ? [conn.project_key] : [])
+
+        if (spaces.length === 0) {
+          await sendText("No Jira space is set up for you yet. Ask the portal owner to add you to a project.")
+          return
+        }
+
+        // A tap or a typed key that matches an allowed space selects it.
+        const typedKey = trimmed.toUpperCase()
+        const pick = tappedSpace && spaces.includes(tappedSpace.toUpperCase())
+          ? tappedSpace.toUpperCase()
+          : (!wantsSwitch && spaces.includes(typedKey) ? typedKey : null)
+
+        if (pick) {
+          ctx.space = pick
+          ctx.lastKeys = []; ctx.lastFilter = null  // context from another space is stale
+          await sendText(`Space set to *${pick}*. You can now create, view, or assign tickets here.\n\nSay "switch space" any time to change.`)
+          return
+        }
+
+        if (wantsSwitch || !ctx.space) {
+          if (spaces.length === 1) {
+            ctx.space = spaces[0]
+            // Fall through: interpret this message in the auto-selected space.
+          } else {
+            await sendSpacePicker(session, chatId, spaces, sendText)
+            return
+          }
+        }
+      }
+
       try {
         const a = await interpretOperator(body, ctx)
         if (a.action === "unknown") {
@@ -839,8 +927,9 @@ async function processInbound(evt) {
             "I can help with your Jira tickets and reminders — try \"how many open?\", \"create a ticket for <issue>\", \"HGD-123\", \"resolve HGD-123\", \"remind me to <task> at <time>\", or \"what's on my schedule?\".")
           return
         }
-        const spaceKeys = await resolveSpaceKeys(userId, operator.phone, jira).catch(() => [])
-        const { reply: answer, keys } = await runOperatorAction(userId, a, ctx, body, spaceKeys)
+        // Scope strictly to the selected space (never the whole allowed set):
+        // a super admin sees one project at a time, chosen via the picker.
+        const { reply: answer, keys } = await runOperatorAction(userId, a, ctx, body, [ctx.space])
         const finalReply = answer || "Sorry, I couldn't do that."
         await sendText(finalReply)
         // Update conversation context: remember the turn + any tickets surfaced.

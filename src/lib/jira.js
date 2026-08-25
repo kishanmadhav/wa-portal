@@ -227,7 +227,9 @@ async function findUser(userId, queryText) {
     const lower = q.toLowerCase()
     const exact = users.find((u) => (u.emailAddress || "").toLowerCase() === lower)
     const pick = exact || users.find((u) => u.accountType === "atlassian") || users[0]
-    return pick ? { accountId: pick.accountId, displayName: pick.displayName } : null
+    return pick
+      ? { accountId: pick.accountId, displayName: pick.displayName, email: pick.emailAddress || null }
+      : null
   } catch {
     return null
   }
@@ -273,7 +275,7 @@ async function resolvePriority(userId, word) {
 async function updateTicket(userId, issueKey, { assigneeQuery, priorityWord }) {
   const { token, conn } = await validToken(userId)
   const base = `${API_BASE}/ex/jira/${conn.cloud_id}/rest/api/3/issue/${issueKey}`
-  const applied = { assignee: null, priority: null }
+  const applied = { assignee: null, assigneeUser: null, priority: null }
 
   // Priority via the fields update (safe even on JSM projects that expose it).
   if (priorityWord) {
@@ -298,7 +300,7 @@ async function updateTicket(userId, issueKey, { assigneeQuery, priorityWord }) {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ accountId: user.accountId }),
       })
-      if (res.ok) applied.assignee = user.displayName
+      if (res.ok) { applied.assignee = user.displayName; applied.assigneeUser = user }
       else console.warn(`[jira] assignee update failed for ${issueKey}:`, await res.text())
     }
   }

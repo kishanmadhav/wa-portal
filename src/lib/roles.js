@@ -93,7 +93,7 @@ async function spacesForPhone(userId, phone) {
  * Callers MUST have authorised this already — this function does not check
  * whether the granter is allowed to grant.
  */
-async function grantRole({ userId, phone, label, role, spaceKey, grantedBy }) {
+async function grantRole({ userId, phone, label, email, role, spaceKey, grantedBy }) {
   const digits = normPhone(phone)
   if (digits.length < 7) throw new Error("invalid_phone")
   if (!ROLES.includes(role)) throw new Error("invalid_role")
@@ -113,13 +113,16 @@ async function grantRole({ userId, phone, label, role, spaceKey, grantedBy }) {
       : "(user_id, phone, space_key) where space_key is not null"
 
   return one(
-    `insert into wa_space_roles (user_id, phone, label, role, space_key, granted_by)
-     values ($1,$2,$3,$4,$5,$6)
+    `insert into wa_space_roles (user_id, phone, label, email, role, space_key, granted_by)
+     values ($1,$2,$3,$4,$5,$6,$7)
      on conflict ${conflict}
-       do update set role = excluded.role,
-                     label = coalesce(excluded.label, wa_space_roles.label)
-     returning id, phone, label, role, space_key, created_at`,
-    [userId, digits, label || null, role, key, grantedBy || null],
+       do update set role  = excluded.role,
+                     label = coalesce(excluded.label, wa_space_roles.label),
+                     email = coalesce(excluded.email, wa_space_roles.email)
+     returning id, phone, label, email, role, space_key, created_at`,
+    [userId, digits, label || null,
+     email ? String(email).trim().toLowerCase() : null,
+     role, key, grantedBy || null],
   )
 }
 

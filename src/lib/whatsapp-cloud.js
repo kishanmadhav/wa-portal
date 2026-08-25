@@ -78,6 +78,54 @@ async function sendText(sendCtx, recipient, text) {
   })
 }
 
+
+// ── Send an interactive list (tap-to-choose menu) ────────────────────────────
+// Meta renders this as a button that opens a native picker. Used for "choose a
+// space" so the operator taps rather than types a project key.
+//
+// Constraints enforced by Meta, applied here so a bad call fails loudly in our
+// code rather than as an opaque meta_400: max 10 rows in total, row title
+// <= 24 chars, row id <= 200 chars, body <= 1024 chars, button label <= 20.
+//
+// `rows` = [{ id, title, description? }]. The tapped row's `id` comes back in
+// the webhook as interactive.list_reply.id.
+async function sendList(sendCtx, recipient, { header, body, button, rows, footer } = {}) {
+  const c = ctx(sendCtx)
+  if (!c.accessToken) throw new Error("meta_no_access_token")
+  if (!c.phoneNumberId) throw new Error("meta_no_phone_number_id")
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error("list_needs_rows")
+  if (rows.length > 10) throw new Error("list_max_10_rows")
+
+  const interactive = {
+    type: "list",
+    body: { text: String(body || "Choose one").slice(0, 1024) },
+    action: {
+      button: String(button || "Choose").slice(0, 20),
+      sections: [{
+        title: String(header || "Options").slice(0, 24),
+        rows: rows.map((r) => ({
+          id: String(r.id).slice(0, 200),
+          title: String(r.title).slice(0, 24),
+          ...(r.description ? { description: String(r.description).slice(0, 72) } : {}),
+        })),
+      }],
+    },
+  }
+  if (header) interactive.header = { type: "text", text: String(header).slice(0, 60) }
+  if (footer) interactive.footer = { text: String(footer).slice(0, 60) }
+
+  return graph("POST", `/${c.phoneNumberId}/messages`, {
+    token: c.accessToken,
+    body: {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: toWaId(recipient),
+      type: "interactive",
+      interactive,
+    },
+  })
+}
+
 // ── Send a pre-approved template ─────────────────────────────────────────────
 // Works anytime (no 24h window). `components` is the Meta template component
 // array for variable substitution; omit for a static template like hello_world.
@@ -133,6 +181,7 @@ module.exports = {
   toWaId,
   ctx,
   sendText,
+  sendList,
   sendTemplate,
   markRead,
   subscribeWaba,
