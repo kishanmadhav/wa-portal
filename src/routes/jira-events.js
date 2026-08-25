@@ -28,21 +28,24 @@ router.post("/:secret", express.json({ limit: "2mb" }), async (req, res) => {
       "select user_id, jira_webhook_secret from wa_jira_connections where jira_webhook_secret is not null and status='active' and jira_webhook_secret=$1",
       [req.params.secret],
     )
-    if (!conn || !safeEqual(conn.jira_webhook_secret, req.params.secret)) return
+    if (!conn || !safeEqual(conn.jira_webhook_secret, req.params.secret)) {
+      console.log("[jira-events] rejected: unknown secret"); return
+    }
     const userId = conn.user_id
 
     const ev = req.body || {}
     const issue = ev.issue
-    if (!issue || !issue.key) return
+    if (!issue || !issue.key) { console.log("[jira-events] skip: no issue in payload", Object.keys(ev)); return }
     const f = issue.fields || {}
     const assignee = f.assignee
       ? { accountId: f.assignee.accountId, displayName: f.assignee.displayName, email: f.assignee.emailAddress || null }
       : null
-    if (!assignee) return  // nobody to tell
+    if (!assignee) { console.log(`[jira-events] skip: ${issue.key} has no assignee`); return }
 
     const ticket = { key: issue.key, summary: f.summary, priority: f.priority?.name, status: f.status?.name }
     const sess = await one("select phone_number_id, access_token, openwa_session_id from wa_sessions where user_id=$1", [userId])
-    if (!sess) return
+    if (!sess) { console.log("[jira-events] skip: no wa_session for user"); return }
+    console.log(`[jira-events] ${ev.webhookEvent} ${issue.key} -> assignee "${assignee.displayName}"`)
     const session = wa.isCloud()
       ? { phoneNumberId: sess.phone_number_id, accessToken: sess.access_token }
       : { openwaSessionId: sess.openwa_session_id }
