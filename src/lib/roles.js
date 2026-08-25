@@ -123,6 +123,34 @@ async function grantRole({ userId, phone, label, role, spaceKey, grantedBy }) {
   )
 }
 
+
+/**
+ * The Jira project keys a phone may act in, ready to pass to jira.searchIssues
+ * / countIssues / createTicket.
+ *
+ * A super admin spans every project on the connected site, so their list is
+ * fetched from Jira rather than from the role rows (which store NULL for
+ * "all"). Everyone else gets their explicitly granted spaces.
+ *
+ * Returns [] when the phone has no grants, which callers should treat as
+ * "fall back to the connection's pinned project".
+ */
+async function resolveSpaceKeys(userId, phone, jiraLib) {
+  const scope = await spacesForPhone(userId, phone)
+
+  if (!scope.all) return scope.spaces
+
+  try {
+    const projects = await jiraLib.listProjects(userId)
+    return (projects || []).map((p) => p.key).filter(Boolean)
+  } catch (e) {
+    // Jira unreachable: fall back to the pinned project rather than failing
+    // the whole message.
+    console.error("[roles] listProjects failed for super admin:", e.message)
+    return []
+  }
+}
+
 module.exports = {
   ROLES,
   RANK,
@@ -131,5 +159,6 @@ module.exports = {
   roleInSpace,
   hasAtLeast,
   spacesForPhone,
+  resolveSpaceKeys,
   grantRole,
 }

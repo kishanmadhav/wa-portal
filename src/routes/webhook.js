@@ -146,6 +146,7 @@ Return ONLY JSON: { "intent": "...", "assignee": "<text or null>", "priority": "
 // take WRITE actions (resolve / reopen / assign / set priority).
 
 const { normPhone } = require("./operators")
+const { resolveSpaceKeys } = require("../lib/roles")
 
 // Returns the operator record enriched with their space-scoped roles, so
 // downstream handlers know not just THAT the sender is trusted but WHERE.
@@ -441,7 +442,11 @@ function buildReminderMessage({ name, text, eventTime, urls, team }) {
 // Execute the action and return { reply, keys } (keys = tickets to remember).
 // rawBody is the operator's original message, used to recover links the LLM
 // may have dropped from reminder_text.
-async function runOperatorAction(userId, a, ctx, rawBody) {
+// `spaceKeys` are the Jira projects this sender may act in:
+//   []            — no explicit grants; fall back to the pinned project
+//   ["HGD"]       — a single-space operator/admin
+//   ["HGD","KAN"] — a super admin, or someone granted several spaces
+async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
   if (a.action === "help") {
     return { reply: [
       "🤖 *What I can do*", "",
@@ -560,7 +565,13 @@ async function runOperatorAction(userId, a, ctx, rawBody) {
     const summary = (a.summary || "").trim()
     if (!summary) return { reply: "What's the ticket about? e.g. \"create a ticket for the printer being down\"." }
     try {
-      const ticket = await jira.createTicket(userId, { issueText: summary, fromPhone: "operator" })
+      const ticket = await jira.createTicket(userId, {
+        issueText: summary,
+        fromPhone: "operator",
+        // One space -> file there. Several (super admin) is ambiguous, so use
+        // the connection's pinned project unless the request named a space.
+        spaceKey: a.space || (spaceKeys.length === 1 ? spaceKeys[0] : null),
+      })
       // Apply optional priority/assignee in one update.
       let extra = ""
       if (a.priority || a.assignee) {
@@ -601,7 +612,7 @@ async function runOperatorAction(userId, a, ctx, rawBody) {
   if (a.action === "count") {
     const { filter, descParts, error } = await buildFilter(userId, a)
     if (error) return { reply: error }
-    const n = await jira.countIssues(userId, filter)
+    const n = await jira.countIssues(userId, filter, spaceKeys)
     ctx.lastFilter = { status: a.status, priority: a.priority, assignee: a.assignee }
     const desc = descParts.join(", ")
     return { reply: `There ${n === 1 ? "is" : "are"} *${n}* ticket${n === 1 ? "" : "s"}${desc ? " " + desc : ""}.` }
@@ -610,7 +621,7 @@ async function runOperatorAction(userId, a, ctx, rawBody) {
   if (a.action === "list") {
     const { filter, descParts, error } = await buildFilter(userId, a)
     if (error) return { reply: error }
-    const items = await jira.searchIssues(userId, filter, 10)
+    const items = await jira.searchIssues(userId, filter, 10, spaceKeys)
     ctx.lastFilter = { status: a.status, priority: a.priority, assignee: a.assignee }
     if (items.length === 0) return { reply: "No tickets match that.", keys: [] }
     const desc = descParts.join(", ")
@@ -620,7 +631,7 @@ async function runOperatorAction(userId, a, ctx, rawBody) {
   }
 
   if (a.action === "recent") {
-    const items = await jira.searchIssues(userId, null, 5)
+    const items = await jira.searchIssues(userId, null, 5, spaceKeys)
     if (items.length === 0) return { reply: "No tickets yet.", keys: [] }
     const reply = `Most recently updated:\n\n` +
       items.map((t) => `• *${t.key}* (${t.status}) — ${t.summary.slice(0, 45)}`).join("\n")
@@ -828,7 +839,8 @@ async function processInbound(evt) {
             "I can help with your Jira tickets and reminders — try \"how many open?\", \"create a ticket for <issue>\", \"HGD-123\", \"resolve HGD-123\", \"remind me to <task> at <time>\", or \"what's on my schedule?\".")
           return
         }
-        const { reply: answer, keys } = await runOperatorAction(userId, a, ctx, body)
+        const spaceKeys = await resolveSpaceKeys(userId, operator.phone, jira).catch(() => [])
+        const { reply: answer, keys } = await runOperatorAction(userId, a, ctx, body, spaceKeys)
         const finalReply = answer || "Sorry, I couldn't do that."
         await sendText(finalReply)
         // Update conversation context: remember the turn + any tickets surfaced.

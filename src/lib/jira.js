@@ -146,12 +146,37 @@ async function pickIssueType(token, cloudId, projectKey) {
   }
 }
 
+// Build the `project = X` / `project IN (X, Y)` clause for a query.
+//
+//   spaceKeys null       -> the connection's pinned project (single-space)
+//   spaceKeys []         -> the pinned project (a super admin with no explicit
+//                           scope still needs a valid clause)
+//   spaceKeys ["A","B"]  -> project IN (A, B)
+//
+// Keys are validated against Jira's own format before interpolation, since
+// they reach a JQL string.
+function projectScope(conn, spaceKeys) {
+  const keys = (Array.isArray(spaceKeys) ? spaceKeys : [])
+    .map((k) => String(k || "").trim().toUpperCase())
+    .filter((k) => /^[A-Z][A-Z0-9_]{0,29}$/.test(k))
+
+  if (!keys.length) {
+    if (!conn.project_key) throw new Error("no_project_selected")
+    return `project = ${conn.project_key}`
+  }
+  if (keys.length === 1) return `project = ${keys[0]}`
+  return `project IN (${keys.join(", ")})`
+}
+
 // Create a Jira ticket for this user.
-async function createTicket(userId, { issueText, fromPhone }) {
+// `spaceKey` overrides the connection's pinned project, so a sender whose role
+// is scoped to a different space files tickets there instead. Falls back to the
+// pinned project when not supplied, which is the single-space behaviour.
+async function createTicket(userId, { issueText, fromPhone, spaceKey }) {
   const { token, conn } = await validToken(userId)
-  if (!conn.project_key) throw new Error("no_project_selected")
+  const projectKey = spaceKey || conn.project_key
+  if (!projectKey) throw new Error("no_project_selected")
   const cloudId = conn.cloud_id
-  const projectKey = conn.project_key
   const issueType = await pickIssueType(token, cloudId, projectKey)
 
   const summary = String(issueText).slice(0, 240)
@@ -286,10 +311,10 @@ async function updateTicket(userId, issueKey, { assigneeQuery, priorityWord }) {
 
 // Run a JQL search scoped to the user's connected project. Returns up to
 // `maxResults` issues with a compact field set.
-async function searchIssues(userId, jqlExtra, maxResults = 20) {
+async function searchIssues(userId, jqlExtra, maxResults = 20, spaceKeys = null) {
   const { token, conn } = await validToken(userId)
-  if (!conn.project_key) throw new Error("no_project_selected")
-  const jql = `project = ${conn.project_key}${jqlExtra ? ` AND ${jqlExtra}` : ""} ORDER BY updated DESC`
+  const scope = projectScope(conn, spaceKeys)
+  const jql = `${scope}${jqlExtra ? ` AND ${jqlExtra}` : ""} ORDER BY updated DESC`
   const params = new URLSearchParams({
     jql,
     maxResults: String(maxResults),
@@ -337,10 +362,10 @@ async function getTicket(userId, key) {
 // Count issues matching an optional JQL filter. The new /search/jql endpoint
 // no longer returns a `total`, so we use the dedicated approximate-count
 // endpoint (POST, returns { count }).
-async function countIssues(userId, jqlExtra) {
+async function countIssues(userId, jqlExtra, spaceKeys = null) {
   const { token, conn } = await validToken(userId)
-  if (!conn.project_key) throw new Error("no_project_selected")
-  const jql = `project = ${conn.project_key}${jqlExtra ? ` AND ${jqlExtra}` : ""}`
+  const scope = projectScope(conn, spaceKeys)
+  const jql = `${scope}${jqlExtra ? ` AND ${jqlExtra}` : ""}`
   const res = await fetch(
     `${API_BASE}/ex/jira/${conn.cloud_id}/rest/api/3/search/approximate-count`,
     {
