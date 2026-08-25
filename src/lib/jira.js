@@ -15,10 +15,15 @@ function cfg() {
 }
 
 // Scopes needed: read user, read/write work (create issues), offline for refresh.
+// manage:jira-webhook lets us subscribe to issue-updated / comment-created so
+// assignees get WhatsApp pushes. Existing connections were granted WITHOUT it
+// — registration returns "401 scope does not match" until the user reconnects
+// Jira from the dashboard and re-consents.
 const SCOPES = [
   "read:jira-user",
   "read:jira-work",
   "write:jira-work",
+  "manage:jira-webhook",
   "offline_access",
 ].join(" ")
 
