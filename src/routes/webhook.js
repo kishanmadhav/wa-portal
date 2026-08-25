@@ -639,6 +639,7 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
             ticket: { key: ticket.key, summary, priority: priorityName, status: "To Do" },
             assignedBy: ctx.operatorLabel || (ctx.operatorPhone ? `+${ctx.operatorPhone}` : null),
             send: (phone, text) => wa.sendText(ctx.session, phone, text),
+            session: ctx.session, chatId: ctx.chatId,
           }).catch(() => {})
         }
         // Tell the operator if the named assignee could not be found, rather
@@ -736,6 +737,7 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
           userId, assigneeUser: applied.assigneeUser, ticket: t || { key: k },
           assignedBy: ctx.operatorLabel || (ctx.operatorPhone ? `+${ctx.operatorPhone}` : null),
           send: (phone, text) => wa.sendText(ctx.session, phone, text),
+          session: ctx.session, chatId: ctx.chatId,
         }).catch(() => {})
       }
     }
@@ -770,6 +772,20 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
     if (targetKeys.length === 0) return { reply: "Which ticket should I comment on? e.g. \"comment on HGD-123: waiting for vendor\"." }
     const text = (a.commentText || "").trim()
     if (!text) return { reply: "What should the comment say? e.g. \"comment on HGD-123: waiting for vendor\"." }
+
+    // Access gate: a ticket key encodes its project (HGD-12 -> HGD). Only
+    // allow comments on tickets whose project is one of the sender's spaces.
+    // Without this, an operator scoped to HGD could comment on KAN-5 just by
+    // naming it — the space picker scopes *listing*, but a typed key bypasses
+    // that, so the write path needs its own check.
+    const allowedSpaces = new Set((spaceKeys || []).map((k) => String(k).toUpperCase()))
+    const denied = targetKeys.filter((k) => {
+      const proj = String(k).split("-")[0].toUpperCase()
+      return allowedSpaces.size > 0 && !allowedSpaces.has(proj)
+    })
+    if (denied.length) {
+      return { reply: `You don't have access to ${denied.join(", ")}. You can comment on tickets in: ${[...allowedSpaces].join(", ") || "your assigned space"}.` }
+    }
     const out = []
     for (const k of targetKeys) {
       try {

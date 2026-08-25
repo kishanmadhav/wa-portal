@@ -12,6 +12,7 @@
 const express = require("express")
 const { all, query } = require("../lib/db")
 const wa = require("../lib/wa")
+const jira = require("../lib/jira")
 
 const router = express.Router()
 
@@ -28,7 +29,8 @@ router.post("/due/:secret", async (req, res) => {
     // Grab due, unsent reminders (cap per run so a backlog doesn't stall).
     // Join wa_sessions to get the provider send credentials for the tenant.
     const due = await all(
-      `select r.id, r.openwa_session_id, r.chat_id, r.message, r.operator_phone,
+      `select r.id, r.user_id, r.openwa_session_id, r.chat_id, r.message, r.operator_phone,
+              r.recipient_phone, r.interval_hours, r.ticket_key, r.kind,
               s.phone_number_id, s.access_token
          from wa_reminders r
          left join wa_sessions s on s.user_id = r.user_id
@@ -46,7 +48,32 @@ router.post("/due/:secret", async (req, res) => {
         const session = wa.isCloud()
           ? { phoneNumberId: r.phone_number_id, accessToken: r.access_token }
           : { openwaSessionId: r.openwa_session_id }
-        const recipient = wa.isCloud() ? (r.operator_phone || r.chat_id) : r.chat_id
+        // recipient_phone lets a reminder target someone other than its
+        // creator (the assignee of a ticket). Falls back to legacy fields.
+        const recipient = wa.isCloud()
+          ? (r.recipient_phone || r.operator_phone || r.chat_id)
+          : r.chat_id
+
+        // Recurring assignment nudge: stop for good once the ticket is
+        // resolved; otherwise send and push fire_at forward, never mark sent.
+        if (r.kind === "assignment" && r.interval_hours) {
+          let resolved = false
+          try {
+            const t = await jira.getTicket(r.user_id, r.ticket_key)
+            resolved = !t || jira.isResolvedStatus(t.status)
+          } catch { /* Jira unreachable: assume still open, nudge anyway */ }
+          if (resolved) {
+            await query("update wa_reminders set sent=true, sent_at=now() where id=$1", [r.id])
+            continue
+          }
+          await wa.sendText(session, recipient, r.message)
+          await query(
+            "update wa_reminders set fire_at = now() + ($2 || ' hours')::interval, sent_at=now() where id=$1",
+            [r.id, String(r.interval_hours)])
+          sent++
+          continue
+        }
+
         await wa.sendText(session, recipient, r.message)
         await query("update wa_reminders set sent=true, sent_at=now() where id=$1", [r.id])
         sent++

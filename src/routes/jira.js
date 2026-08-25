@@ -55,6 +55,31 @@ router.get("/callback", async (req, res) => {
       [userId, site.id, site.url, site.name, tokens.access_token, tokens.refresh_token, expiresAt],
     )
 
+    // Subscribe Jira to notify us of status changes and comments, so assignees
+    // get told over WhatsApp. Fire-and-forget: a failure here must never break
+    // connecting Jira itself — the bot still works, just without push updates.
+    // The secret is stored BEFORE registration so an inbound event can never
+    // arrive for a secret we don't yet recognise.
+    setImmediate(async () => {
+      try {
+        const secret = crypto.randomBytes(24).toString("hex")
+        await query(
+          "update wa_jira_connections set jira_webhook_secret=$2 where user_id=$1",
+          [userId, secret],
+        )
+        // No APP_URL is configured in this deployment, so derive the public
+        // base from the request. Caddy fronts us over HTTPS, so trust its
+        // forwarded proto/host, falling back to what Express sees.
+        const proto = req.get("x-forwarded-proto") || req.protocol || "https"
+        const host = req.get("x-forwarded-host") || req.get("host")
+        const { id } = await jira.registerJiraWebhook(userId, `${proto}://${host}`, secret)
+        await query("update wa_jira_connections set jira_webhook_id=$2 where user_id=$1", [userId, id])
+        console.log(`[jira] change-notification webhook registered (id=${id}) for user ${userId.slice(0, 8)}`)
+      } catch (e) {
+        console.error("[jira] webhook registration failed (push updates disabled):", e.message)
+      }
+    })
+
     // Back to the dashboard, where they'll pick a project.
     res.redirect("/dashboard.html?jira=connected")
   } catch (e) {

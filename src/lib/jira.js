@@ -551,6 +551,39 @@ async function transitionToStatus(userId, key, statusWord) {
   return { ok: false, reason: "not_reachable", finalStatus: cur.name }
 }
 
+
+// ── Jira -> us change notifications ─────────────────────────────────────────
+// Subscribe Jira to POST issue updates and new comments to our events route so
+// assignees get told about status changes and comments. One webhook per
+// connection, secret in the URL path (Jira Cloud OAuth webhooks do not sign
+// bodies, so the unguessable path IS the auth).
+async function registerJiraWebhook(userId, publicBase, secret) {
+  const { token, conn } = await validToken(userId)
+  const url = `${publicBase.replace(/\/$/, "")}/jira/events/${secret}`
+  const res = await fetch(`${API_BASE}/ex/jira/${conn.cloud_id}/rest/api/3/webhook`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      url,
+      webhooks: [{
+        events: ["jira:issue_updated", "comment_created"],
+        // Jira REQUIRES a jqlFilter on OAuth webhooks. Scope to the site's
+        // projects broadly; we filter to assigned-to-a-known-phone ourselves.
+        jqlFilter: "project is not EMPTY",
+      }],
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(`jira_webhook_register_failed ${res.status} ${JSON.stringify(data).slice(0, 200)}`)
+  const created = (data.webhookRegistrationResult || [])[0]
+  if (!created || created.errors) throw new Error(`jira_webhook_rejected ${JSON.stringify(created?.errors || data).slice(0, 200)}`)
+  return { id: String(created.createdWebhookId), url }
+}
+
+function isResolvedStatus(name) {
+  return /done|resolved|closed|complete|cancel/i.test(String(name || ""))
+}
+
 module.exports = {
   authorizeUrl,
   exchangeCode,
@@ -563,6 +596,8 @@ module.exports = {
   updateTicket,
   searchIssues,
   getTicket,
+  registerJiraWebhook,
+  isResolvedStatus,
   countIssues,
   transitionToCategory,
   transitionToStatus,
