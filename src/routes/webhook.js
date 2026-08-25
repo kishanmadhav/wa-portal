@@ -661,8 +661,16 @@ async function runOperatorAction(userId, a, ctx, rawBody, spaceKeys = []) {
       // If the operator stated a deadline, schedule the reminder(s).
       let deadlineNote = ""
       if (a.deadline && a.deadline.getTime() > Date.now()) {
-        const n = await scheduleDeadlineReminders(userId, ctx, a.deadline, summary, ticket.key)
-        deadlineNote = n > 0 ? `\n⏰ Deadline ${fmtIst(a.deadline)} — I'll remind you before it.` : ""
+        // The ticket is ALREADY created at this point. A reminder failure must
+        // never turn a successful create into an error reply — the user would
+        // re-send and get a duplicate ticket. Degrade to a soft note instead.
+        try {
+          const n = await scheduleDeadlineReminders(userId, ctx, a.deadline, summary, ticket.key)
+          deadlineNote = n > 0 ? `\n⏰ Deadline ${fmtIst(a.deadline)} — I'll remind you before it.` : ""
+        } catch (e) {
+          console.error("[webhook] deadline reminder failed (ticket already created):", e.message)
+          deadlineNote = `\n⏰ Deadline ${fmtIst(a.deadline)} _(couldn't set a reminder)_.`
+        }
       }
       return { reply: [
         "✅ *Ticket created*", "",
