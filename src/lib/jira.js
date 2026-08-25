@@ -565,6 +565,15 @@ async function transitionToStatus(userId, key, statusWord) {
 async function registerJiraWebhook(userId, publicBase, secret) {
   const { token, conn } = await validToken(userId)
   const url = `${publicBase.replace(/\/$/, "")}/jira/events/${secret}`
+
+  // Webhook JQL is a restricted subset: no `is not EMPTY`, no wildcards.
+  // Jira rejects those with "Operator ... is unsupported". Enumerate the
+  // site's projects explicitly instead. Re-registration on reconnect keeps
+  // this current as projects are added.
+  const projects = await listProjects(userId)
+  const keys = projects.map((p) => p.key).filter((k) => /^[A-Z][A-Z0-9_]*$/.test(k))
+  if (!keys.length) throw new Error("jira_webhook_no_projects")
+  const jqlFilter = keys.length === 1 ? `project = ${keys[0]}` : `project IN (${keys.join(", ")})`
   const res = await fetch(`${API_BASE}/ex/jira/${conn.cloud_id}/rest/api/3/webhook`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
@@ -572,9 +581,9 @@ async function registerJiraWebhook(userId, publicBase, secret) {
       url,
       webhooks: [{
         events: ["jira:issue_updated", "comment_created"],
-        // Jira REQUIRES a jqlFilter on OAuth webhooks. Scope to the site's
-        // projects broadly; we filter to assigned-to-a-known-phone ourselves.
-        jqlFilter: "project is not EMPTY",
+        // Jira REQUIRES a jqlFilter on OAuth webhooks; built above from the
+        // real project keys. We filter to assigned-to-a-known-phone ourselves.
+        jqlFilter,
       }],
     }),
   })
