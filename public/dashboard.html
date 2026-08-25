@@ -47,19 +47,35 @@
       </div>
     </section>
 
-    <!-- Verified operators -->
+    <!-- People & access -->
     <section class="card wide">
-      <h2>Verified operators</h2>
-      <p class="hint">These phone numbers can query your Jira over WhatsApp (ticket status, priority, counts, recent activity) instead of creating tickets.</p>
+      <h2>People &amp; access</h2>
+      <p class="hint">
+        Phone numbers that can use Service Genie over WhatsApp.
+        <strong>Operators</strong> work tickets in one space (Jira project).
+        <strong>Admins</strong> do that and manage operators for their space.
+        <strong>Super admins</strong> do both across every space.
+        You are the portal owner, so you always have full access.
+      </p>
+
       <div class="op-add">
-        <input id="op-phone" type="text" placeholder="Phone with country code, e.g. +91 7358350698" />
-        <input id="op-label" type="text" placeholder="Name (optional)" />
-        <button id="op-add-btn">Add operator</button>
+        <input id="role-phone" type="text" placeholder="Phone with country code, e.g. +91 7358350698" />
+        <input id="role-label" type="text" placeholder="Name (optional)" />
+        <select id="role-role">
+          <option value="operator">Operator</option>
+          <option value="admin">Admin</option>
+          <option value="super_admin">Super admin</option>
+        </select>
+        <select id="role-space">
+          <option value="">Select space…</option>
+        </select>
+        <button id="role-add-btn">Add</button>
       </div>
-      <p id="op-msg" class="msg"></p>
-      <table id="operators">
-        <thead><tr><th>Phone</th><th>Name</th><th>Added</th><th></th></tr></thead>
-        <tbody><tr><td colspan="4" class="muted">No operators yet.</td></tr></tbody>
+      <p id="role-msg" class="msg"></p>
+
+      <table id="roles">
+        <thead><tr><th>Phone</th><th>Name</th><th>Role</th><th>Space</th><th>Added</th><th></th></tr></thead>
+        <tbody><tr><td colspan="6" class="muted">No one added yet.</td></tr></tbody>
       </table>
     </section>
 

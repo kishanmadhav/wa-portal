@@ -184,45 +184,97 @@ async function refreshTickets() {
     </tr>`).join("");
 }
 
-// ── Verified operators ───────────────────────────────────────────────────────
-async function refreshOperators() {
-  const data = await (await api("/operators")).json();
-  const tbody = $("operators").querySelector("tbody");
-  if (!data.operators || data.operators.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="muted">No operators yet.</td></tr>`;
+// ── People & access (space-scoped roles) ────────────────────────────────────
+const ROLE_LABEL = { operator: "Operator", admin: "Admin", super_admin: "Super admin" };
+
+// Populate the space picker from the connected Jira site's projects.
+async function refreshSpaces() {
+  const sel = $("role-space");
+  try {
+    const data = await (await api("/roles/spaces")).json();
+    const opts = (data.spaces || [])
+      .map((sp) => `<option value="${sp.key}">${sp.key} — ${sp.name}</option>`)
+      .join("");
+    sel.innerHTML = `<option value="">Select space…</option>` + opts;
+  } catch {
+    sel.innerHTML = `<option value="">Select space…</option>`;
+  }
+}
+
+// A super admin spans every space, so the space picker is meaningless for it.
+function syncSpaceEnabled() {
+  const isSuper = $("role-role").value === "super_admin";
+  const sel = $("role-space");
+  sel.disabled = isSuper;
+  if (isSuper) sel.value = "";
+  sel.style.opacity = isSuper ? "0.5" : "1";
+}
+$("role-role").onchange = syncSpaceEnabled;
+
+async function refreshRoles() {
+  const tbody = $("roles").querySelector("tbody");
+  let rows = [];
+  try {
+    const data = await (await api("/roles")).json();
+    rows = data.roles || [];
+  } catch {
+    // Server unreachable, or the migration has not been applied yet. Say so
+    // rather than leaving the table stuck on its placeholder.
+    tbody.innerHTML = `<tr><td colspan="6" class="muted">Could not load access list.</td></tr>`;
     return;
   }
-  tbody.innerHTML = data.operators.map((o) => `
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="muted">No one added yet.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((r) => `
     <tr>
-      <td class="mono">+${o.phone}</td>
-      <td>${o.label || "—"}</td>
-      <td class="muted">${new Date(o.created_at).toLocaleDateString()}</td>
-      <td><button class="ghost op-del" data-id="${o.id}" style="padding:4px 10px;font-size:12px">Remove</button></td>
+      <td class="mono">+${r.phone}</td>
+      <td>${r.label || "—"}</td>
+      <td>${ROLE_LABEL[r.role] || r.role}</td>
+      <td class="mono">${r.space_key || "All spaces"}</td>
+      <td class="muted">${new Date(r.created_at).toLocaleDateString()}</td>
+      <td><button class="ghost role-del" data-id="${r.id}" style="padding:4px 10px;font-size:12px">Remove</button></td>
     </tr>`).join("");
-  tbody.querySelectorAll(".op-del").forEach((btn) => {
+  tbody.querySelectorAll(".role-del").forEach((btn) => {
     btn.onclick = async () => {
-      await api(`/operators/${btn.dataset.id}`, { method: "DELETE" });
-      refreshOperators();
+      await api(`/roles/${btn.dataset.id}`, { method: "DELETE" });
+      refreshRoles();
     };
   });
 }
 
-$("op-add-btn").onclick = async () => {
-  const phone = $("op-phone").value.trim();
-  const label = $("op-label").value.trim();
-  const msg = $("op-msg");
+$("role-add-btn").onclick = async () => {
+  const phone = $("role-phone").value.trim();
+  const label = $("role-label").value.trim();
+  const role  = $("role-role").value;
+  const space = $("role-space").value;
+  const msg   = $("role-msg");
+
   if (!phone) { msg.textContent = "Enter a phone number"; msg.className = "msg err"; return; }
-  const res = await api("/operators", {
+  if (role !== "super_admin" && !space) {
+    msg.textContent = "Pick a space for this role";
+    msg.className = "msg err";
+    return;
+  }
+
+  const res = await api("/roles", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone, label }),
+    body: JSON.stringify({ phone, label, role, space_key: role === "super_admin" ? null : space }),
   });
+
   if (res.ok) {
-    $("op-phone").value = ""; $("op-label").value = "";
+    $("role-phone").value = ""; $("role-label").value = "";
     msg.textContent = "Added ✓"; msg.className = "msg ok";
-    refreshOperators();
+    refreshRoles();
   } else {
-    const d = await res.json();
-    msg.textContent = d.error === "invalid_phone" ? "That phone number looks invalid" : "Failed to add";
+    const d = await res.json().catch(() => ({}));
+    const errs = {
+      invalid_phone: "That phone number looks invalid",
+      space_required: "Pick a space for this role",
+      super_admin_is_global: "Super admins cover every space — leave the space blank",
+    };
+    msg.textContent = errs[d.error] || "Failed to add";
     msg.className = "msg err";
   }
 };
@@ -231,7 +283,9 @@ $("op-add-btn").onclick = async () => {
 refreshWa();
 refreshJira();
 refreshTickets();
-refreshOperators();
+refreshRoles();
+refreshSpaces();
+syncSpaceEnabled();
 setInterval(refreshTickets, 15000);
 setInterval(refreshWa, 10000);
 // If we just came back from Jira OAuth, refresh.

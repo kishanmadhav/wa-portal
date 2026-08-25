@@ -10,6 +10,7 @@ const { whatsappRouter } = require("./routes/whatsapp")
 const { webhookRouter } = require("./routes/webhook")
 const { cloudWebhookRouter } = require("./routes/webhook-cloud")
 const { operatorsRouter } = require("./routes/operators")
+const { rolesRouter } = require("./routes/roles")
 const { remindersRouter } = require("./routes/reminders")
 const { all } = require("./lib/db")
 
@@ -81,6 +82,7 @@ app.use("/auth", authRouter)
 app.use("/jira", jiraRouter)
 app.use("/whatsapp", whatsappRouter) // connect/qr/status/disconnect
 app.use("/operators", operatorsRouter) // verified-operator management
+app.use("/roles", rolesRouter)         // space-scoped admin/operator roles
 app.use("/reminders", remindersRouter) // reminder delivery (secret-protected)
 
 // Recent tickets for the dashboard.

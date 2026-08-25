@@ -9,7 +9,7 @@
 const express = require("express")
 const OpenAI = require("openai").default
 const rateLimit = require("express-rate-limit")
-const { one, query } = require("../lib/db")
+const { one, all, query } = require("../lib/db")
 const openwa = require("../lib/openwa")
 const wa = require("../lib/wa")           // provider router (openwa | cloud)
 const jira = require("../lib/jira")
@@ -147,10 +147,51 @@ Return ONLY JSON: { "intent": "...", "assignee": "<text or null>", "priority": "
 
 const { normPhone } = require("./operators")
 
+// Returns the operator record enriched with their space-scoped roles, so
+// downstream handlers know not just THAT the sender is trusted but WHERE.
+//
+//   role     — strongest role held: operator | admin | super_admin
+//   spaces   — project keys they may act in ([] when allSpaces is true)
+//   allSpaces— true for a super admin
+//
+// wa_operators remains the "is this phone trusted at all" gate. A phone with
+// no row there is an unknown sender regardless of wa_space_roles, so revoking
+// from the operator list still locks someone out.
 async function getOperator(userId, fromPhone) {
   const digits = normPhone(fromPhone)
   if (!digits) return null
-  return one("select id, phone, label from wa_operators where user_id=$1 and phone=$2", [userId, digits])
+  const op = await one(
+    "select id, phone, label from wa_operators where user_id=$1 and phone=$2",
+    [userId, digits],
+  )
+  if (!op) return null
+
+  let roles = []
+  try {
+    roles = await all(
+      "select role, space_key from wa_space_roles where user_id=$1 and phone=$2",
+      [userId, digits],
+    )
+  } catch (e) {
+    // The roles table may not exist yet (migration not applied). Fall back to
+    // the pre-roles behaviour rather than locking every operator out.
+    if (!/relation .* does not exist/i.test(e.message || "")) {
+      console.error("[webhook] role lookup failed:", e.message)
+    }
+  }
+
+  const allSpaces = roles.some((r) => r.role === "super_admin")
+  const rank = { operator: 1, admin: 2, super_admin: 3 }
+  const role = roles.length
+    ? roles.reduce((b, r) => (rank[r.role] > rank[b] ? r.role : b), roles[0].role)
+    : "operator"
+
+  return {
+    ...op,
+    role,
+    allSpaces,
+    spaces: allSpaces ? [] : [...new Set(roles.map((r) => r.space_key).filter(Boolean))],
+  }
 }
 
 // Per-operator conversation context (in-process, 15-min TTL).
