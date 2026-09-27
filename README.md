@@ -1,4 +1,4 @@
-# Genie WhatsApp
+#WhatsApp-Automation
 
 A multi-tenant WhatsApp support portal that turns inbound WhatsApp messages into
 Jira tickets, and gives verified operators a conversational Jira assistant
